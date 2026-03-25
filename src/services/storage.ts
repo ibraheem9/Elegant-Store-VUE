@@ -1,7 +1,7 @@
 /**
- * LocalStorage Service
- * Handles all data persistence with localStorage
- * Professional implementation with error handling
+ * Professional LocalStorage Service
+ * Comprehensive data persistence with CRUD operations, validation, and error handling
+ * Follows SOLID principles and clean code standards
  */
 
 import type {
@@ -12,18 +12,20 @@ import type {
   CustomerPayment,
   DebtReminder,
   DailyStatistics,
+  EditHistory,
 } from '../types/index';
 
 const STORAGE_KEYS = {
-  USERS: 'store_users',
-  INVOICES: 'store_invoices',
-  PURCHASES: 'store_purchases',
-  PAYMENTS: 'store_payments',
-  PAYMENT_METHODS: 'store_payment_methods',
-  REMINDERS: 'store_reminders',
-  STATISTICS: 'store_statistics',
-  CURRENT_USER: 'store_current_user',
+  USERS: 'store_users_v1',
+  INVOICES: 'store_invoices_v1',
+  PURCHASES: 'store_purchases_v1',
+  PAYMENTS: 'store_payments_v1',
+  PAYMENT_METHODS: 'store_payment_methods_v1',
+  REMINDERS: 'store_reminders_v1',
+  STATISTICS: 'store_statistics_v1',
+  CURRENT_USER: 'store_current_user_v1',
   LAST_SYNC: 'store_last_sync',
+  APP_STATE: 'store_app_state_v1',
 };
 
 class StorageService {
@@ -31,21 +33,39 @@ class StorageService {
    * Initialize storage with dummy data if empty
    */
   static initializeDummyData(): void {
-    if (!this.getUsers().length) {
-      this.setUsers(this.generateDummyUsers());
+    try {
+      if (!this.getUsers().length) {
+        this.setUsers(this.generateDummyUsers());
+      }
+      if (!this.getPaymentMethods().length) {
+        this.setPaymentMethods(this.generateDummyPaymentMethods());
+      }
+      if (!this.getInvoices().length) {
+        this.setInvoices(this.generateDummyInvoices());
+      }
+      if (!this.getPurchases().length) {
+        this.setPurchases(this.generateDummyPurchases());
+      }
+      if (!this.getPayments().length) {
+        this.setPayments(this.generateDummyPayments());
+      }
+    } catch (error) {
+      console.error('Error initializing dummy data:', error);
     }
-    if (!this.getPaymentMethods().length) {
-      this.setPaymentMethods(this.generateDummyPaymentMethods());
-    }
-    if (!this.getInvoices().length) {
-      this.setInvoices(this.generateDummyInvoices());
-    }
-    if (!this.getPurchases().length) {
-      this.setPurchases(this.generateDummyPurchases());
-    }
-    if (!this.getPayments().length) {
-      this.setPayments(this.generateDummyPayments());
-    }
+  }
+
+  /**
+   * Format date as DD-MM-YYYY with day name
+   */
+  static formatDateWithDay(date: Date = new Date()): { date: string; day: string } {
+    const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    return {
+      date: `${d}-${m}-${y}`,
+      day: days[date.getDay()],
+    };
   }
 
   // ============ Users Management ============
@@ -68,21 +88,41 @@ class StorageService {
     }
   }
 
-  static addUser(user: User): void {
+  static addUser(user: Omit<User, 'id' | 'createdAt'>): User {
     const users = this.getUsers();
-    user.id = Math.max(...users.map(u => u.id || 0), 0) + 1;
-    user.createdAt = new Date().toISOString();
-    users.push(user);
+    const newUser: User = {
+      ...user,
+      id: Math.max(...users.map(u => u.id || 0), 0) + 1,
+      createdAt: new Date().toISOString(),
+    };
+    users.push(newUser);
     this.setUsers(users);
+    return newUser;
   }
 
-  static updateUser(id: number, updates: Partial<User>): void {
+  static updateUser(id: number, updates: Partial<User>): boolean {
     const users = this.getUsers();
     const index = users.findIndex(u => u.id === id);
     if (index !== -1) {
-      users[index] = { ...users[index], ...updates, updatedAt: new Date().toISOString() };
+      users[index] = {
+        ...users[index],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
       this.setUsers(users);
+      return true;
     }
+    return false;
+  }
+
+  static deleteUser(id: number): boolean {
+    const users = this.getUsers();
+    const filtered = users.filter(u => u.id !== id);
+    if (filtered.length < users.length) {
+      this.setUsers(filtered);
+      return true;
+    }
+    return false;
   }
 
   static getUserById(id: number): User | undefined {
@@ -91,6 +131,16 @@ class StorageService {
 
   static getUserByUsername(username: string): User | undefined {
     return this.getUsers().find(u => u.username === username);
+  }
+
+  static searchUsers(query: string): User[] {
+    const lowerQuery = query.toLowerCase();
+    return this.getUsers().filter(
+      u =>
+        u.name.toLowerCase().includes(lowerQuery) ||
+        u.phoneNumber?.toLowerCase().includes(lowerQuery) ||
+        u.notes?.toLowerCase().includes(lowerQuery)
+    );
   }
 
   // ============ Invoices Management ============
@@ -113,26 +163,62 @@ class StorageService {
     }
   }
 
-  static addInvoice(invoice: Invoice): void {
+  static addInvoice(invoice: Omit<Invoice, 'id' | 'createdAt'>): Invoice {
     const invoices = this.getInvoices();
-    invoice.id = Math.max(...invoices.map(i => i.id || 0), 0) + 1;
-    invoice.createdAt = new Date().toISOString();
-    invoices.push(invoice);
+    const newInvoice: Invoice = {
+      ...invoice,
+      id: Math.max(...invoices.map(i => i.id || 0), 0) + 1,
+      createdAt: new Date().toISOString(),
+      editHistory: [],
+    };
+    invoices.push(newInvoice);
     this.setInvoices(invoices);
+    return newInvoice;
   }
 
-  static updateInvoice(id: number, updates: Partial<Invoice>): void {
+  static updateInvoice(id: number, updates: Partial<Invoice>, changedBy: string = 'system'): boolean {
     const invoices = this.getInvoices();
     const index = invoices.findIndex(i => i.id === id);
     if (index !== -1) {
-      invoices[index] = { ...invoices[index], ...updates, updatedAt: new Date().toISOString() };
+      const oldInvoice = invoices[index];
+      const changes: Record<string, { old: any; new: any }> = {};
+
+      Object.keys(updates).forEach(key => {
+        if (key !== 'editHistory' && (updates as any)[key] !== oldInvoice[key as keyof Invoice]) {
+          changes[key] = {
+            old: oldInvoice[key as keyof Invoice],
+            new: (updates as any)[key],
+          };
+        }
+      });
+
+      const editHistory: EditHistory = {
+        timestamp: new Date().toISOString(),
+        changedBy,
+        changes,
+      };
+
+      invoices[index] = {
+        ...oldInvoice,
+        ...updates,
+        updatedAt: new Date().toISOString(),
+        editHistory: [...(oldInvoice.editHistory || []), editHistory],
+      };
+
       this.setInvoices(invoices);
+      return true;
     }
+    return false;
   }
 
-  static deleteInvoice(id: number): void {
+  static deleteInvoice(id: number): boolean {
     const invoices = this.getInvoices();
-    this.setInvoices(invoices.filter(i => i.id !== id));
+    const filtered = invoices.filter(i => i.id !== id);
+    if (filtered.length < invoices.length) {
+      this.setInvoices(filtered);
+      return true;
+    }
+    return false;
   }
 
   static getInvoicesByDate(date: string): Invoice[] {
@@ -141,6 +227,10 @@ class StorageService {
 
   static getInvoicesByUser(userId: number): Invoice[] {
     return this.getInvoices().filter(i => i.userId === userId);
+  }
+
+  static getInvoicesByDateRange(startDate: string, endDate: string): Invoice[] {
+    return this.getInvoices().filter(i => i.invoiceDate >= startDate && i.invoiceDate <= endDate);
   }
 
   // ============ Purchases Management ============
@@ -163,21 +253,49 @@ class StorageService {
     }
   }
 
-  static addPurchase(purchase: Purchase): void {
+  static addPurchase(purchase: Omit<Purchase, 'id' | 'createdAt'>): Purchase {
     const purchases = this.getPurchases();
-    purchase.id = Math.max(...purchases.map(p => p.id || 0), 0) + 1;
-    purchase.createdAt = new Date().toISOString();
-    purchases.push(purchase);
+    const newPurchase: Purchase = {
+      ...purchase,
+      id: Math.max(...purchases.map(p => p.id || 0), 0) + 1,
+      createdAt: new Date().toISOString(),
+    };
+    purchases.push(newPurchase);
     this.setPurchases(purchases);
+    return newPurchase;
   }
 
-  static deletePurchase(id: number): void {
+  static updatePurchase(id: number, updates: Partial<Purchase>): boolean {
     const purchases = this.getPurchases();
-    this.setPurchases(purchases.filter(p => p.id !== id));
+    const index = purchases.findIndex(p => p.id === id);
+    if (index !== -1) {
+      purchases[index] = {
+        ...purchases[index],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      this.setPurchases(purchases);
+      return true;
+    }
+    return false;
+  }
+
+  static deletePurchase(id: number): boolean {
+    const purchases = this.getPurchases();
+    const filtered = purchases.filter(p => p.id !== id);
+    if (filtered.length < purchases.length) {
+      this.setPurchases(filtered);
+      return true;
+    }
+    return false;
   }
 
   static getPurchasesByDate(date: string): Purchase[] {
     return this.getPurchases().filter(p => p.purchaseDate === date);
+  }
+
+  static getPurchasesBySupplier(supplier: string): Purchase[] {
+    return this.getPurchases().filter(p => p.supplier === supplier);
   }
 
   // ============ Payments Management ============
@@ -200,16 +318,24 @@ class StorageService {
     }
   }
 
-  static addPayment(payment: CustomerPayment): void {
+  static addPayment(payment: Omit<CustomerPayment, 'id' | 'createdAt'>): CustomerPayment {
     const payments = this.getPayments();
-    payment.id = Math.max(...payments.map(p => p.id || 0), 0) + 1;
-    payment.createdAt = new Date().toISOString();
-    payments.push(payment);
+    const newPayment: CustomerPayment = {
+      ...payment,
+      id: Math.max(...payments.map(p => p.id || 0), 0) + 1,
+      createdAt: new Date().toISOString(),
+    };
+    payments.push(newPayment);
     this.setPayments(payments);
+    return newPayment;
   }
 
   static getPaymentsByDate(date: string): CustomerPayment[] {
     return this.getPayments().filter(p => p.paymentDate === date);
+  }
+
+  static getPaymentsByUser(userId: number): CustomerPayment[] {
+    return this.getPayments().filter(p => p.userId === userId);
   }
 
   // ============ Payment Methods Management ============
@@ -232,11 +358,26 @@ class StorageService {
     }
   }
 
-  static addPaymentMethod(method: PaymentMethod): void {
+  static addPaymentMethod(method: Omit<PaymentMethod, 'id'>): PaymentMethod {
     const methods = this.getPaymentMethods();
-    method.id = Math.max(...methods.map(m => m.id || 0), 0) + 1;
-    methods.push(method);
+    const newMethod: PaymentMethod = {
+      ...method,
+      id: Math.max(...methods.map(m => m.id || 0), 0) + 1,
+    };
+    methods.push(newMethod);
     this.setPaymentMethods(methods);
+    return newMethod;
+  }
+
+  static updatePaymentMethod(id: number, updates: Partial<PaymentMethod>): boolean {
+    const methods = this.getPaymentMethods();
+    const index = methods.findIndex(m => m.id === id);
+    if (index !== -1) {
+      methods[index] = { ...methods[index], ...updates };
+      this.setPaymentMethods(methods);
+      return true;
+    }
+    return false;
   }
 
   // ============ Debt Reminders Management ============
@@ -259,21 +400,31 @@ class StorageService {
     }
   }
 
-  static addReminder(reminder: DebtReminder): void {
+  static addReminder(reminder: Omit<DebtReminder, 'id' | 'createdAt'>): DebtReminder {
     const reminders = this.getReminders();
-    reminder.id = Math.max(...reminders.map(r => r.id || 0), 0) + 1;
-    reminder.createdAt = new Date().toISOString();
-    reminders.push(reminder);
+    const newReminder: DebtReminder = {
+      ...reminder,
+      id: Math.max(...reminders.map(r => r.id || 0), 0) + 1,
+      createdAt: new Date().toISOString(),
+    };
+    reminders.push(newReminder);
     this.setReminders(reminders);
+    return newReminder;
   }
 
-  static markReminderAsRead(id: number): void {
+  static markReminderAsRead(id: number): boolean {
     const reminders = this.getReminders();
     const reminder = reminders.find(r => r.id === id);
     if (reminder) {
       reminder.isRead = true;
       this.setReminders(reminders);
+      return true;
     }
+    return false;
+  }
+
+  static getPendingReminders(): DebtReminder[] {
+    return this.getReminders().filter(r => !r.isRead);
   }
 
   // ============ Authentication ============
@@ -349,7 +500,9 @@ class StorageService {
         name: 'أحمد علي',
         role: 'customer',
         isPermanentCustomer: true,
-        creditLimit: 500,
+        creditLimit: 100,
+        balance: 0,
+        phoneNumber: '0599123456',
         createdAt: today,
       },
       {
@@ -359,7 +512,9 @@ class StorageService {
         name: 'فاطمة محمد',
         role: 'customer',
         isPermanentCustomer: true,
-        creditLimit: 300,
+        creditLimit: 150,
+        balance: 0,
+        phoneNumber: '0599234567',
         createdAt: today,
       },
       {
@@ -370,6 +525,8 @@ class StorageService {
         role: 'customer',
         isPermanentCustomer: true,
         creditLimit: 200,
+        balance: 0,
+        phoneNumber: '0599345678',
         createdAt: today,
       },
     ];
@@ -388,69 +545,72 @@ class StorageService {
   }
 
   private static generateDummyInvoices(): Invoice[] {
-    const today = new Date();
+    const { date, day } = this.formatDateWithDay();
     return [
       {
         id: 1,
         userId: 5,
-        invoiceDate: today.toISOString().split('T')[0],
-        amount: 150,
+        invoiceDate: date,
+        dayName: day,
+        amount: 50,
         paymentStatus: 'paid',
         paymentMethodId: 1,
-        createdAt: today.toISOString(),
+        createdAt: new Date().toISOString(),
       },
       {
         id: 2,
         userId: 6,
-        invoiceDate: today.toISOString().split('T')[0],
-        amount: 200,
+        invoiceDate: date,
+        dayName: day,
+        amount: 75,
         paymentStatus: 'pending',
-        createdAt: today.toISOString(),
+        createdAt: new Date().toISOString(),
       },
       {
         id: 3,
         userId: 7,
-        invoiceDate: today.toISOString().split('T')[0],
+        invoiceDate: date,
+        dayName: day,
         amount: 100,
         paymentStatus: 'partial',
-        createdAt: today.toISOString(),
+        createdAt: new Date().toISOString(),
       },
     ];
   }
 
   private static generateDummyPurchases(): Purchase[] {
-    const today = new Date();
+    const { date } = this.formatDateWithDay();
     return [
       {
         id: 1,
         supplier: 'المورد الأول',
-        amount: 500,
+        amount: 200,
         paymentMethodId: 1,
-        purchaseDate: today.toISOString().split('T')[0],
-        createdAt: today.toISOString(),
+        purchaseDate: date,
+        createdAt: new Date().toISOString(),
       },
       {
         id: 2,
         supplier: 'المورد الثاني',
-        amount: 300,
+        amount: 150,
         paymentMethodId: 1,
-        purchaseDate: today.toISOString().split('T')[0],
-        createdAt: today.toISOString(),
+        purchaseDate: date,
+        createdAt: new Date().toISOString(),
       },
     ];
   }
 
   private static generateDummyPayments(): CustomerPayment[] {
-    const today = new Date();
+    const { date } = this.formatDateWithDay();
     return [
       {
         id: 1,
         userId: 5,
         invoiceId: 1,
-        amount: 150,
+        amount: 50,
         paymentMethodId: 1,
-        paymentDate: today.toISOString().split('T')[0],
-        createdAt: today.toISOString(),
+        paymentDate: date,
+        createdAt: new Date().toISOString(),
       },
     ];
   }
@@ -482,6 +642,17 @@ class StorageService {
     if (data.payments) this.setPayments(data.payments);
     if (data.paymentMethods) this.setPaymentMethods(data.paymentMethods);
     if (data.reminders) this.setReminders(data.reminders);
+  }
+
+  static getStorageSize(): number {
+    let size = 0;
+    Object.values(STORAGE_KEYS).forEach(key => {
+      const data = localStorage.getItem(key);
+      if (data) {
+        size += data.length;
+      }
+    });
+    return size;
   }
 }
 
